@@ -3,6 +3,8 @@
  * Copyright (C) 2015-2019 Jason A. Donenfeld <Jason@zx2c4.com>. All Rights Reserved.
  */
 
+#include <linux/slab.h>
+
 #include "allowedips.h"
 #include "peer.h"
 
@@ -55,15 +57,21 @@ static void node_free_rcu(struct rcu_head *rcu)
 
 static void root_free_rcu(struct rcu_head *rcu)
 {
-	struct allowedips_node *node, *stack[MAX_ALLOWEDIPS_DEPTH] = {
-		container_of(rcu, struct allowedips_node, rcu) };
+	struct allowedips_node *node, **stack;
 	unsigned int len = 1;
+
+	stack = kmalloc_array(MAX_ALLOWEDIPS_DEPTH, sizeof(*stack), GFP_KERNEL);
+	if (!stack)
+		return;
+
+	stack[0] = container_of(rcu, struct allowedips_node, rcu);
 
 	while (len > 0 && (node = stack[--len])) {
 		push_rcu(stack, node->bit[0], &len);
 		push_rcu(stack, node->bit[1], &len);
 		kmem_cache_free(node_cache, node);
 	}
+	kfree(stack);
 }
 
 static void root_remove_peer_lists(struct allowedips_node *root)

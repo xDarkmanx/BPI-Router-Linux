@@ -765,7 +765,7 @@ static int parse_elf_properties(struct file *f, const struct elf_phdr *phdr,
 	union {
 		struct elf_note nhdr;
 		char data[NOTE_DATA_SZ];
-	} note;
+	} *note;
 	loff_t pos;
 	ssize_t n;
 	size_t off, datasz;
