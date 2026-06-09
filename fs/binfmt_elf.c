@@ -776,43 +776,56 @@ static int parse_elf_properties(struct file *f, const struct elf_phdr *phdr,
 	if (!IS_ENABLED(CONFIG_ARCH_USE_GNU_PROPERTY) || !phdr)
 		return 0;
 
-	/* load_elf_binary() shouldn't call us unless this is true... */
 	if (WARN_ON_ONCE(phdr->p_type != PT_GNU_PROPERTY))
 		return -ENOEXEC;
 
-	/* If the properties are crazy large, that's too bad (for now): */
-	if (phdr->p_filesz > sizeof(note))
+	note = kmalloc(sizeof(*note), GFP_KERNEL);
+	if (!note)
+		return -ENOMEM;
+
+	if (phdr->p_filesz > sizeof(*note)) {
+		kfree(note);
 		return -ENOEXEC;
+	}
 
 	pos = phdr->p_offset;
-	n = kernel_read(f, &note, phdr->p_filesz, &pos);
+	n = kernel_read(f, note, phdr->p_filesz, &pos);
 
-	BUILD_BUG_ON(sizeof(note) < sizeof(note.nhdr) + NOTE_NAME_SZ);
-	if (n < 0 || n < sizeof(note.nhdr) + NOTE_NAME_SZ)
+	BUILD_BUG_ON(sizeof(*note) < sizeof(note->nhdr) + NOTE_NAME_SZ);
+	if (n < 0 || n < sizeof(note->nhdr) + NOTE_NAME_SZ) {
+		kfree(note);
 		return -EIO;
+	}
 
-	if (note.nhdr.n_type != NT_GNU_PROPERTY_TYPE_0 ||
-	    note.nhdr.n_namesz != NOTE_NAME_SZ ||
-	    strncmp(note.data + sizeof(note.nhdr),
-		    GNU_PROPERTY_TYPE_0_NAME, n - sizeof(note.nhdr)))
+	if (note->nhdr.n_type != NT_GNU_PROPERTY_TYPE_0 ||
+	    note->nhdr.n_namesz != NOTE_NAME_SZ ||
+	    strncmp(note->data + sizeof(note->nhdr),
+		    GNU_PROPERTY_TYPE_0_NAME, n - sizeof(note->nhdr))) {
+		kfree(note);
 		return -ENOEXEC;
+	}
 
-	off = round_up(sizeof(note.nhdr) + NOTE_NAME_SZ,
+	off = round_up(sizeof(note->nhdr) + NOTE_NAME_SZ,
 		       ELF_GNU_PROPERTY_ALIGN);
-	if (off > n)
+	if (off > n) {
+		kfree(note);
 		return -ENOEXEC;
+	}
 
-	if (note.nhdr.n_descsz > n - off)
+	if (note->nhdr.n_descsz > n - off) {
+		kfree(note);
 		return -ENOEXEC;
-	datasz = off + note.nhdr.n_descsz;
+	}
+	datasz = off + note->nhdr.n_descsz;
 
 	have_prev_type = false;
 	do {
-		ret = parse_elf_property(note.data, &off, datasz, arch,
+		ret = parse_elf_property(note->data, &off, datasz, arch,
 					 have_prev_type, &prev_type);
 		have_prev_type = true;
 	} while (!ret);
 
+	kfree(note);
 	return ret == -ENOENT ? 0 : ret;
 }
 

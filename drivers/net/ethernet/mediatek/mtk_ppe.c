@@ -1059,12 +1059,12 @@ void mtk_ppe_start(struct mtk_ppe *ppe)
 	      FIELD_PREP(MTK_PPE_UNBIND_AGE_DELTA, 3);
 	ppe_w32(ppe, MTK_PPE_UNBIND_AGE, val);
 
-	val = FIELD_PREP(MTK_PPE_BIND_AGE0_DELTA_UDP, 12) |
+	val = FIELD_PREP(MTK_PPE_BIND_AGE0_DELTA_UDP, 30) |
 	      FIELD_PREP(MTK_PPE_BIND_AGE0_DELTA_NON_L4, 1);
 	ppe_w32(ppe, MTK_PPE_BIND_AGE0, val);
 
 	val = FIELD_PREP(MTK_PPE_BIND_AGE1_DELTA_TCP_FIN, 1) |
-	      FIELD_PREP(MTK_PPE_BIND_AGE1_DELTA_TCP, 7);
+	      FIELD_PREP(MTK_PPE_BIND_AGE1_DELTA_TCP, 30);
 	ppe_w32(ppe, MTK_PPE_BIND_AGE1, val);
 
 	val = MTK_PPE_BIND_LIMIT0_QUARTER | MTK_PPE_BIND_LIMIT0_HALF;
@@ -1082,9 +1082,13 @@ void mtk_ppe_start(struct mtk_ppe *ppe)
 	val = MTK_PPE_GLO_CFG_EN |
 	      MTK_PPE_GLO_CFG_IP4_L4_CS_DROP |
 	      MTK_PPE_GLO_CFG_IP4_CS_DROP |
+	      MTK_PPE_GLO_CFG_MCAST_TB_EN |
 	      MTK_PPE_GLO_CFG_FLOW_DROP_UPDATE;
 	if (mtk_is_netsys_v2_or_greater(ppe->eth))
 		val |= MTK_PPE_GLO_CFG_SP_CMP_EN;
+	if (mtk_is_netsys_v3_or_greater(ppe->eth))
+		val |= MTK_PPE_GLO_CFG_CS0_PIPE_EN |
+		       MTK_PPE_GLO_CFG_SRH_CACHE_FIRST_EN;
 	ppe_w32(ppe, MTK_PPE_GLO_CFG, val);
 
 	ppe_w32(ppe, MTK_PPE_DEFAULT_CPU_PORT, 0);

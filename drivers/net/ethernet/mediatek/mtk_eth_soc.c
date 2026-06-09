@@ -2352,8 +2352,10 @@ static int mtk_poll_rx(struct napi_struct *napi, int budget,
 				skb_dst_set_noref(skb, &eth->dsa_meta[port]->dst);
 		}
 
+#if !IS_ENABLED(CONFIG_NET_MEDIATEK_HNAT)
 		if (reason == MTK_PPE_CPU_REASON_HIT_UNBIND_RATE_REACHED)
 			mtk_ppe_check_skb(eth->ppe[ppe_idx], skb, hash);
+#endif
 
 		skb_record_rx_queue(skb, 0);
 		napi_gro_receive(napi, skb);
@@ -3576,8 +3578,10 @@ static int mtk_open(struct net_device *dev)
 			return err;
 		}
 
+#if !IS_ENABLED(CONFIG_NET_MEDIATEK_HNAT)
 		for (i = 0; i < ARRAY_SIZE(eth->ppe); i++)
 			mtk_ppe_start(eth->ppe[i]);
+#endif
 
 		for (i = 0; i < MTK_MAX_DEVS; i++) {
 			if (!eth->netdev[i])
@@ -3601,8 +3605,10 @@ static int mtk_open(struct net_device *dev)
 		}
 
 		mtu = mtk_max_gmac_mtu(eth);
+#if !IS_ENABLED(CONFIG_NET_MEDIATEK_HNAT)
 		for (i = 0; i < ARRAY_SIZE(eth->ppe); i++)
 			mtk_ppe_update_mtu(eth->ppe[i], mtu);
+#endif
 
 		napi_enable(&eth->tx_napi);
 		napi_enable(&eth->rx_napi);
@@ -3705,8 +3711,10 @@ static int mtk_stop(struct net_device *dev)
 
 	mtk_dma_free(eth);
 
+#if !IS_ENABLED(CONFIG_NET_MEDIATEK_HNAT)
 	for (i = 0; i < ARRAY_SIZE(eth->ppe); i++)
 		mtk_ppe_stop(eth->ppe[i]);
+#endif
 
 	return 0;
 }
@@ -4342,7 +4350,10 @@ static int mtk_change_mtu(struct net_device *dev, int new_mtu)
 	int length = new_mtu + MTK_RX_ETH_HLEN;
 	struct mtk_mac *mac = netdev_priv(dev);
 	struct mtk_eth *eth = mac->hw;
-	int max_mtu, i;
+	int max_mtu;
+#if !IS_ENABLED(CONFIG_NET_MEDIATEK_HNAT)
+	int i;
+#endif
 
 	if (rcu_access_pointer(eth->prog) &&
 	    length > MTK_PP_MAX_BUF_SIZE) {
@@ -4354,8 +4365,10 @@ static int mtk_change_mtu(struct net_device *dev, int new_mtu)
 	WRITE_ONCE(dev->mtu, new_mtu);
 
 	max_mtu = mtk_max_gmac_mtu(eth);
+#if !IS_ENABLED(CONFIG_NET_MEDIATEK_HNAT)
 	for (i = 0; i < ARRAY_SIZE(eth->ppe); i++)
 		mtk_ppe_update_mtu(eth->ppe[i], max_mtu);
+#endif
 
 	return 0;
 }
@@ -4394,8 +4407,10 @@ static void mtk_prepare_for_reset(struct mtk_eth *eth)
 	}
 
 	/* adjust PPE configurations to prepare for reset */
+#if !IS_ENABLED(CONFIG_NET_MEDIATEK_HNAT)
 	for (i = 0; i < ARRAY_SIZE(eth->ppe); i++)
 		mtk_ppe_prepare_reset(eth->ppe[i]);
+#endif
 
 	/* disable NETSYS interrupts */
 	mtk_w32(eth, 0, MTK_FE_INT_ENABLE);
@@ -4791,7 +4806,6 @@ static const struct net_device_ops mtk_netdev_ops = {
 #ifdef CONFIG_NET_POLL_CONTROLLER
 	.ndo_poll_controller	= mtk_poll_controller,
 #endif
-	.ndo_setup_tc		= mtk_eth_setup_tc,
 	.ndo_bpf		= mtk_xdp,
 	.ndo_xdp_xmit		= mtk_xdp_xmit,
 	.ndo_select_queue	= mtk_select_queue,
@@ -5322,6 +5336,7 @@ static int mtk_probe(struct platform_device *pdev)
 			goto err_free_dev;
 	}
 
+#if !IS_ENABLED(CONFIG_NET_MEDIATEK_HNAT)
 	if (eth->soc->offload_version) {
 		u8 ppe_num = eth->soc->ppe_num;
 
@@ -5342,6 +5357,7 @@ static int mtk_probe(struct platform_device *pdev)
 				goto err_deinit_ppe;
 		}
 	}
+#endif
 
 	for (i = 0; i < MTK_MAX_DEVS; i++) {
 		if (!eth->netdev[i])
@@ -5380,7 +5396,9 @@ static int mtk_probe(struct platform_device *pdev)
 err_unreg_netdev:
 	mtk_unreg_dev(eth);
 err_deinit_ppe:
+#if !IS_ENABLED(CONFIG_NET_MEDIATEK_HNAT)
 	mtk_ppe_deinit(eth);
+#endif
 	mtk_mdio_cleanup(eth);
 err_free_dev:
 	mtk_free_dev(eth);

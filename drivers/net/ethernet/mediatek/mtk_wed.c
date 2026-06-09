@@ -2665,7 +2665,6 @@ static int
 mtk_wed_setup_tc_block_cb(enum tc_setup_type type, void *type_data, void *cb_priv)
 {
 	struct mtk_wed_flow_block_priv *priv = cb_priv;
-	struct flow_cls_offload *cls = type_data;
 	struct mtk_wed_hw *hw = NULL;
 
 	if (!priv || !tc_can_offload(priv->dev))
@@ -2675,7 +2674,7 @@ mtk_wed_setup_tc_block_cb(enum tc_setup_type type, void *type_data, void *cb_pri
 		return -EOPNOTSUPP;
 
 	hw = priv->hw;
-	return mtk_flow_offload_cmd(hw->eth, cls, hw->index);
+	return -EOPNOTSUPP;
 }
 
 static int

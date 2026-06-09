@@ -1407,6 +1407,14 @@
 			};
 		};
 
+		hnat: hnat@15000000 {
+			compatible = "mediatek,mtk-hnat_v5";
+			reg = <0 0x15100000 0 0x80000>;
+			resets = <&ethsys 0>;
+			reset-names = "mtketh";
+			status = "disabled";
+		};
+
 		crypto: crypto@15600000 {
 			compatible = "inside-secure,safexcel-eip197b";
 			reg = <0 0x15600000 0 0x180000>;

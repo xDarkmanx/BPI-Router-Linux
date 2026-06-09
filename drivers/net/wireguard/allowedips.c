@@ -76,15 +76,24 @@ static void root_free_rcu(struct rcu_head *rcu)
 
 static void root_remove_peer_lists(struct allowedips_node *root)
 {
-	struct allowedips_node *node, *stack[MAX_ALLOWEDIPS_DEPTH] = { root };
+	struct allowedips_node **stack;
 	unsigned int len = 1;
 
-	while (len > 0 && (node = stack[--len])) {
+	stack = kmalloc_array(MAX_ALLOWEDIPS_DEPTH, sizeof(*stack), GFP_KERNEL);
+	if (!stack)
+		return;
+
+	stack[0] = root;
+
+	while (len > 0 && (stack[len - 1])) {
+		struct allowedips_node *node = stack[--len];
+
 		push_rcu(stack, node->bit[0], &len);
 		push_rcu(stack, node->bit[1], &len);
 		if (rcu_access_pointer(node->peer))
 			list_del(&node->peer_list);
 	}
+	kfree(stack);
 }
 
 static unsigned int fls128(u64 a, u64 b)
