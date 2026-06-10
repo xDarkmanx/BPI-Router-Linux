@@ -1150,28 +1150,28 @@
 
 				gsw_port0: port@0 {
 					reg = <0>;
-					label = "lan0";
+					label = "eth3";
 					phy-mode = "internal";
 					phy-handle = <&gsw_phy0>;
 				};
 
 				gsw_port1: port@1 {
 					reg = <1>;
-					label = "lan1";
+					label = "eth4";
 					phy-mode = "internal";
 					phy-handle = <&gsw_phy1>;
 				};
 
 				gsw_port2: port@2 {
 					reg = <2>;
-					label = "lan2";
+					label = "eth5";
 					phy-mode = "internal";
 					phy-handle = <&gsw_phy2>;
 				};
 
 				gsw_port3: port@3 {
 					reg = <3>;
-					label = "lan3";
+					label = "eth6";
 					phy-mode = "internal";
 					phy-handle = <&gsw_phy3>;
 				};
@@ -1310,58 +1310,62 @@
 		eth: ethernet@15100000 {
 			compatible = "mediatek,mt7988-eth";
 			reg = <0 0x15100000 0 0x80000>,
-			      <0 0x15400000 0 0x380000>;
-			interrupts = <GIC_SPI 196 IRQ_TYPE_LEVEL_HIGH>,
-				     <GIC_SPI 197 IRQ_TYPE_LEVEL_HIGH>,
-				     <GIC_SPI 198 IRQ_TYPE_LEVEL_HIGH>,
-				     <GIC_SPI 199 IRQ_TYPE_LEVEL_HIGH>;
+				<0 0x15400000 0 0x380000>;
+			interrupts = <GIC_SPI 189 IRQ_TYPE_LEVEL_HIGH>,
+				<GIC_SPI 190 IRQ_TYPE_LEVEL_HIGH>,
+				<GIC_SPI 191 IRQ_TYPE_LEVEL_HIGH>,
+				<GIC_SPI 192 IRQ_TYPE_LEVEL_HIGH>,
+				<GIC_SPI 196 IRQ_TYPE_LEVEL_HIGH>,
+				<GIC_SPI 197 IRQ_TYPE_LEVEL_HIGH>,
+				<GIC_SPI 198 IRQ_TYPE_LEVEL_HIGH>,
+				<GIC_SPI 199 IRQ_TYPE_LEVEL_HIGH>;
 			clocks = <&ethsys CLK_ETHDMA_XGP1_EN>,
-				 <&ethsys CLK_ETHDMA_XGP2_EN>,
-				 <&ethsys CLK_ETHDMA_XGP3_EN>,
-				 <&ethsys CLK_ETHDMA_FE_EN>,
-				 <&ethsys CLK_ETHDMA_GP2_EN>,
-				 <&ethsys CLK_ETHDMA_GP1_EN>,
-				 <&ethsys CLK_ETHDMA_GP3_EN>,
-				 <&ethsys CLK_ETHDMA_ESW_EN>,
-				 <&ethsys CLK_ETHDMA_CRYPT0_EN>,
-				 <&ethwarp CLK_ETHWARP_WOCPU2_EN>,
-				 <&ethwarp CLK_ETHWARP_WOCPU1_EN>,
-				 <&ethwarp CLK_ETHWARP_WOCPU0_EN>,
-				 <&topckgen CLK_TOP_ETH_GMII_SEL>,
-				 <&topckgen CLK_TOP_ETH_REFCK_50M_SEL>,
-				 <&topckgen CLK_TOP_ETH_SYS_200M_SEL>,
-				 <&topckgen CLK_TOP_ETH_SYS_SEL>,
-				 <&topckgen CLK_TOP_ETH_XGMII_SEL>,
-				 <&topckgen CLK_TOP_ETH_MII_SEL>,
-				 <&topckgen CLK_TOP_NETSYS_SEL>,
-				 <&topckgen CLK_TOP_NETSYS_500M_SEL>,
-				 <&topckgen CLK_TOP_NETSYS_PAO_2X_SEL>,
-				 <&topckgen CLK_TOP_NETSYS_SYNC_250M_SEL>,
-				 <&topckgen CLK_TOP_NETSYS_PPEFB_250M_SEL>,
-				 <&topckgen CLK_TOP_NETSYS_WARP_SEL>;
+				<&ethsys CLK_ETHDMA_XGP2_EN>,
+				<&ethsys CLK_ETHDMA_XGP3_EN>,
+				<&ethsys CLK_ETHDMA_FE_EN>,
+				<&ethsys CLK_ETHDMA_GP2_EN>,
+				<&ethsys CLK_ETHDMA_GP1_EN>,
+				<&ethsys CLK_ETHDMA_GP3_EN>,
+				<&ethsys CLK_ETHDMA_ESW_EN>,
+				<&ethsys CLK_ETHDMA_CRYPT0_EN>,
+				<&ethwarp CLK_ETHWARP_WOCPU2_EN>,
+				<&ethwarp CLK_ETHWARP_WOCPU1_EN>,
+				<&ethwarp CLK_ETHWARP_WOCPU0_EN>,
+				<&topckgen CLK_TOP_ETH_GMII_SEL>,
+				<&topckgen CLK_TOP_ETH_REFCK_50M_SEL>,
+				<&topckgen CLK_TOP_ETH_SYS_200M_SEL>,
+				<&topckgen CLK_TOP_ETH_SYS_SEL>,
+				<&topckgen CLK_TOP_ETH_XGMII_SEL>,
+				<&topckgen CLK_TOP_ETH_MII_SEL>,
+				<&topckgen CLK_TOP_NETSYS_SEL>,
+				<&topckgen CLK_TOP_NETSYS_500M_SEL>,
+				<&topckgen CLK_TOP_NETSYS_PAO_2X_SEL>,
+				<&topckgen CLK_TOP_NETSYS_SYNC_250M_SEL>,
+				<&topckgen CLK_TOP_NETSYS_PPEFB_250M_SEL>,
+				<&topckgen CLK_TOP_NETSYS_WARP_SEL>;
 			clock-names = "xgp1", "xgp2", "xgp3", "fe", "gp2", "gp1",
-				      "gp3", "esw", "crypto",
-				      "ethwarp_wocpu2", "ethwarp_wocpu1",
-				      "ethwarp_wocpu0", "top_eth_gmii_sel",
-				      "top_eth_refck_50m_sel", "top_eth_sys_200m_sel",
-				      "top_eth_sys_sel", "top_eth_xgmii_sel",
-				      "top_eth_mii_sel", "top_netsys_sel",
-				      "top_netsys_500m_sel", "top_netsys_pao_2x_sel",
-				      "top_netsys_sync_250m_sel",
-				      "top_netsys_ppefb_250m_sel",
-				      "top_netsys_warp_sel";
+				"gp3", "esw", "crypto",
+				"ethwarp_wocpu2", "ethwarp_wocpu1",
+				"ethwarp_wocpu0", "top_eth_gmii_sel",
+				"top_eth_refck_50m_sel", "top_eth_sys_200m_sel",
+				"top_eth_sys_sel", "top_eth_xgmii_sel",
+				"top_eth_mii_sel", "top_netsys_sel",
+				"top_netsys_500m_sel", "top_netsys_pao_2x_sel",
+				"top_netsys_sync_250m_sel",
+				"top_netsys_ppefb_250m_sel",
+				"top_netsys_warp_sel";
 			assigned-clocks = <&topckgen CLK_TOP_NETSYS_2X_SEL>,
-					  <&topckgen CLK_TOP_NETSYS_GSW_SEL>,
-					  <&topckgen CLK_TOP_USXGMII_SBUS_0_SEL>,
-					  <&topckgen CLK_TOP_USXGMII_SBUS_1_SEL>,
-					  <&topckgen CLK_TOP_SGM_0_SEL>,
-					  <&topckgen CLK_TOP_SGM_1_SEL>;
+				<&topckgen CLK_TOP_NETSYS_GSW_SEL>,
+				<&topckgen CLK_TOP_USXGMII_SBUS_0_SEL>,
+				<&topckgen CLK_TOP_USXGMII_SBUS_1_SEL>,
+				<&topckgen CLK_TOP_SGM_0_SEL>,
+				<&topckgen CLK_TOP_SGM_1_SEL>;
 			assigned-clock-parents = <&apmixedsys CLK_APMIXED_NET2PLL>,
-						 <&topckgen CLK_TOP_NET1PLL_D4>,
-						 <&topckgen CLK_TOP_NET1PLL_D8_D4>,
-						 <&topckgen CLK_TOP_NET1PLL_D8_D4>,
-						 <&apmixedsys CLK_APMIXED_SGMPLL>,
-						 <&apmixedsys CLK_APMIXED_SGMPLL>;
+				<&topckgen CLK_TOP_NET1PLL_D4>,
+				<&topckgen CLK_TOP_NET1PLL_D8_D4>,
+				<&topckgen CLK_TOP_NET1PLL_D8_D4>,
+				<&apmixedsys CLK_APMIXED_SGMPLL>,
+				<&apmixedsys CLK_APMIXED_SGMPLL>;
 			mediatek,ethsys = <&ethsys>;
 			mediatek,infracfg = <&topmisc>;
 			#address-cells = <1>;
@@ -1407,13 +1411,13 @@
 			};
 		};
 
-		hnat: hnat@15000000 {
-			compatible = "mediatek,mtk-hnat_v5";
-			reg = <0 0x15100000 0 0x80000>;
-			resets = <&ethsys 0>;
-			reset-names = "mtketh";
-			status = "disabled";
-		};
+        hnat: hnat@15000000 {
+            compatible = "mediatek,mtk-hnat_v5";
+            reg = <0 0x15100000 0 0x80000>;
+            resets = <&ethsys 0>;
+            reset-names = "mtketh";
+            status = "disabled";
+        };
 
 		crypto: crypto@15600000 {
 			compatible = "inside-secure,safexcel-eip197b";

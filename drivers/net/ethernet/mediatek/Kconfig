@@ -17,10 +17,14 @@ config NET_AIROHA
 
 config NET_MEDIATEK_SOC_WED
 	depends on ARCH_MEDIATEK || COMPILE_TEST
-	def_bool NET_MEDIATEK_SOC != n
+	def_bool NET_MEDIATEK_SOC != n || NET_MEDIATEK_MT7988 != n
+
+choice
+	prompt "MediaTek Ethernet driver"
+	default NET_MEDIATEK_SOC
 
 config NET_MEDIATEK_SOC
-	tristate "MediaTek SoC Gigabit Ethernet support"
+	bool "MediaTek SoC Gigabit Ethernet (mtk_eth_soc)"
 	depends on NET_DSA || !NET_DSA
 	select PINCTRL
 	select PHYLINK
@@ -31,11 +35,30 @@ config NET_MEDIATEK_SOC
 	select REGMAP_MMIO
 	help
 	  This driver supports the gigabit ethernet MACs in the
-	  MediaTek SoC family.
+	  MediaTek SoC family (MT76xx/MT7981/MT7986/MT7988).
+	  Single RX queue, limited RSS support.
+
+config NET_MEDIATEK_MT7988
+	bool "MediaTek MT7988 standalone ethernet (mt7988_eth)"
+	depends on ARCH_MEDIATEK || COMPILE_TEST
+	depends on NET_DSA || !NET_DSA
+	select PINCTRL
+	select PHYLINK
+	select DIMLIB
+	select PAGE_POOL
+	select PAGE_POOL_STATS
+	select PCS_MTK_LYNXI
+	select REGMAP_MMIO
+	help
+	  Standalone ethernet driver for MediaTek MT7988 SoC.
+	  Multi-queue RSS, HNAT with 3 PPE engines.
+	  Mutually exclusive with the generic mtk_eth_soc driver.
+
+endchoice
 
 config NET_MEDIATEK_HNAT
 	tristate "MediaTek HW NAT support"
-	depends on NET_MEDIATEK_SOC && NF_CONNTRACK && IP_NF_NAT
+	depends on (NET_MEDIATEK_SOC || NET_MEDIATEK_MT7988) && NF_CONNTRACK && IP_NF_NAT
 	help
 	  This driver supports the hardware Network Address Translation
 	  engine in the MediaTek MT7986/MT7988/MT7622/MT7629 chipset family.

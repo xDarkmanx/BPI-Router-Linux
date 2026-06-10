@@ -967,7 +967,7 @@ static struct platform_driver hnat_driver = {
 	.probe = hnat_probe,
 	.remove = hnat_remove,
 	.driver = {
-		.name = "mediatek_soc_hnat",
+		.name = "mt7xxx_hnat",
 		.of_match_table = of_hnat_match,
 	},
 };

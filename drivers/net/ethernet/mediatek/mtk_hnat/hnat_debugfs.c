@@ -21,7 +21,11 @@
 
 #include "hnat.h"
 #include "nf_hnat_mtk.h"
+#ifdef CONFIG_NET_MEDIATEK_MT7988
+#include "../mt7988_eth.h"
+#else
 #include "../mtk_eth_soc.h"
+#endif
 
 int dbg_entry_state = BIND;
 typedef int (*debugfs_write_func)(int par1);

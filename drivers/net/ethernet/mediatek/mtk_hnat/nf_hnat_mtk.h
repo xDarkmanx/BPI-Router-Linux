@@ -16,7 +16,11 @@
 
 #include <linux/dma-mapping.h>
 #include <linux/netdevice.h>
+#ifdef CONFIG_NET_MEDIATEK_MT7988
+#include "../mt7988_eth.h"
+#else
 #include "../mtk_eth_soc.h"
+#endif
 
 #define FLOW_OFFLOAD_PATH_VLAN		BIT(0)
 #define FLOW_OFFLOAD_PATH_PPPOE		BIT(1)
