@@ -17,7 +17,7 @@ endif
 obj-$(CONFIG_NET_MEDIATEK_SOC_WED) += mtk_wed_ops.o
 
 obj-$(CONFIG_NET_MEDIATEK_MT7988) += mt7988_eth.o
-mt7988_eth-y := mt7988_eth.o mt7988_path.o mt7988_dma.o
+mt7988_eth-y := mt7988_eth.o mt7988_path.o mt7988_dma.o mt7988_reset.o
 mt7988_eth-y += mtk_htb.o
 ifndef CONFIG_NET_MEDIATEK_HNAT
 mt7988_eth-y += mt7988_ppe.o mt7988_debugfs.o mt7988_offload.o

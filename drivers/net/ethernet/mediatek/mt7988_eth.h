@@ -1260,8 +1260,11 @@ struct mtk_soc_data {
 
 #define MTK_DMA_MONITOR_TIMEOUT msecs_to_jiffies(1000)
 
-/* currently no SoC has more than 3 macs */
 #define MTK_MAX_DEVS 3
+
+struct mtk_reset_event {
+	u32 count[32];
+};
 
 /* struct mtk_eth -	This is the main datasructure for holding the state
  *			of the driver
@@ -1375,6 +1378,7 @@ struct mtk_eth {
 
 	struct {
 		struct delayed_work monitor_work;
+		struct completion wait_ser_done;
 		u32 wdidx;
 		u8 wdma_hang_count;
 		u8 qdma_hang_count;
@@ -1384,6 +1388,8 @@ struct mtk_eth {
 		u32 pre_ipq10;
 		u32 pre_fsm;
 	} reset;
+
+	struct mtk_reset_event reset_event;
 };
 
 /* struct mtk_mac -	the structure that holds the info about the MACs of the
@@ -1487,6 +1493,8 @@ static inline bool mtk_interface_mode_is_xgmii(phy_interface_t interface)
 
 /* read the hardware status register */
 void mtk_stats_update_mac(struct mtk_mac *mac);
+
+void mtk_gdm_config(struct mtk_eth *eth, u32 id, u32 config);
 
 void mtk_w32(struct mtk_eth *eth, u32 val, unsigned reg);
 u32 mtk_r32(struct mtk_eth *eth, unsigned reg);

@@ -33,6 +33,7 @@
 
 #include "mt7988_dma.h"
 #include "mt7988_eth.h"
+#include "mt7988_reset.h"
 
 #include "mtk_wed.h"
 
@@ -1019,10 +1020,25 @@ static irqreturn_t mtk_handle_irq_tx(int irq, void *_eth)
 static irqreturn_t mtk_handle_fe_irq(int irq, void *_eth)
 {
 	struct mtk_eth *eth = _eth;
-	u32 status = 0;
+	u32 status, val;
+
 	status = mtk_r32(eth, MTK_FE_INT_STATUS);
 	pr_info("[%s] Trigger FE Misc ISR: 0x%x\n", __func__, status);
+
+	while (status) {
+		val = ffs((unsigned int)status) - 1;
+		status &= ~(1 << val);
+
+		if ((val == MTK_EVENT_TSO_FAIL) ||
+		    (val == MTK_EVENT_TSO_ILLEGAL) ||
+		    (val == MTK_EVENT_TSO_ALIGN) ||
+		    (val == MTK_EVENT_RFIFO_OV) ||
+		    (val == MTK_EVENT_RFIFO_UF))
+			pr_info("[%s] Detect reset event: %s !\n", __func__,
+				mtk_reset_event_name[val]);
+	}
 	mtk_w32(eth, 0xFFFFFFFF, MTK_FE_INT_STATUS);
+
 	return IRQ_HANDLED;
 }
 
@@ -1040,7 +1056,7 @@ static void mtk_poll_controller(struct net_device *dev)
 }
 #endif
 
-static void mtk_gdm_config(struct mtk_eth *eth, u32 id, u32 config)
+void mtk_gdm_config(struct mtk_eth *eth, u32 id, u32 config)
 {
 	u32 val;
 
@@ -1355,145 +1371,6 @@ static void mtk_hw_warm_reset(struct mtk_eth *eth)
 			rst_mask);
 }
 
-static bool mtk_hw_check_dma_hang(struct mtk_eth *eth)
-{
-	const struct mtk_reg_map *reg_map = eth->soc->reg_map;
-	bool gmac1_tx, gmac2_tx, gmac3_tx, gdm1_tx, gdm2_tx, gdm3_tx;
-	bool oq_hang, cdm1_busy, adma_busy;
-	bool wtx_busy, cdm_full, oq_free;
-	u32 wdidx, val, gdm1_fc, gdm2_fc, gdm3_fc;
-	u32 tdma_glo_cfg, cur_fsm, ipq10;
-	bool rx_busy, tx_busy, cur_fsm_tx, cur_fsm_rx;
-	bool qfsm_hang, qfwd_hang;
-	bool ret = false;
-
-	/* WDMA sanity checks */
-	wdidx = mtk_r32(eth, reg_map->wdma_base[0] + 0xc);
-
-	val = mtk_r32(eth, reg_map->wdma_base[0] + 0x204);
-	wtx_busy = FIELD_GET(MTK_TX_DMA_BUSY, val);
-
-	val = mtk_r32(eth, reg_map->wdma_base[0] + 0x230);
-	cdm_full = !FIELD_GET(MTK_CDM_TXFIFO_RDY, val);
-
-	oq_free =
-		(!(mtk_r32(eth, reg_map->pse_oq_sta) & GENMASK(24, 16)) &&
-		 !(mtk_r32(eth, reg_map->pse_oq_sta + 0x4) & GENMASK(8, 0)) &&
-		 !(mtk_r32(eth, reg_map->pse_oq_sta + 0x10) & GENMASK(24, 16)));
-
-	if (wdidx == eth->reset.wdidx && wtx_busy && cdm_full && oq_free) {
-		if (++eth->reset.wdma_hang_count > 2) {
-			eth->reset.wdma_hang_count = 0;
-			ret = true;
-		}
-		goto out;
-	}
-
-	/* QDMA sanity checks */
-	qfsm_hang = !!mtk_r32(eth, reg_map->qdma.qtx_cfg + 0x234);
-	qfwd_hang = !mtk_r32(eth, reg_map->qdma.qtx_cfg + 0x308);
-
-	gdm1_tx = FIELD_GET(GENMASK(31, 16), mtk_r32(eth, MTK_FE_GDM1_FSM)) > 0;
-	gdm2_tx = FIELD_GET(GENMASK(31, 16), mtk_r32(eth, MTK_FE_GDM2_FSM)) > 0;
-	gdm3_tx = FIELD_GET(GENMASK(31, 16), mtk_r32(eth, MTK_FE_GDM3_FSM)) > 0;
-	gmac1_tx = FIELD_GET(GENMASK(31, 24), mtk_r32(eth, MTK_MAC_FSM(0))) !=
-		   1;
-	gmac2_tx = FIELD_GET(GENMASK(31, 24), mtk_r32(eth, MTK_MAC_FSM(1))) !=
-		   1;
-	gmac3_tx = FIELD_GET(GENMASK(31, 24), mtk_r32(eth, MTK_MAC_FSM(2))) !=
-		   1;
-	gdm1_fc =
-		mtk_r32(eth, reg_map->gdm1_cnt + MTK_GDM_RX_FC_OFFSET(eth, 0));
-	gdm2_fc =
-		mtk_r32(eth, reg_map->gdm1_cnt + MTK_GDM_RX_FC_OFFSET(eth, 1));
-	gdm3_fc =
-		mtk_r32(eth, reg_map->gdm1_cnt + MTK_GDM_RX_FC_OFFSET(eth, 2));
-
-	if (qfsm_hang && qfwd_hang &&
-	    ((gdm1_tx && gmac1_tx && gdm1_fc < 1) ||
-	     (gdm2_tx && gmac2_tx && gdm2_fc < 1) ||
-	     (gdm3_tx && gmac3_tx && gdm3_fc < 1))) {
-		if (++eth->reset.qdma_hang_count > 2) {
-			eth->reset.qdma_hang_count = 0;
-			ret = true;
-		}
-		goto out;
-	}
-
-	/* ADMA sanity checks */
-	oq_hang = !!(mtk_r32(eth, reg_map->pse_oq_sta) & GENMASK(8, 0));
-	cdm1_busy = !!(mtk_r32(eth, MTK_FE_CDM1_FSM) & GENMASK(31, 16));
-	adma_busy =
-		!(mtk_r32(eth, reg_map->adma.adma_rx_dbg0) & GENMASK(4, 0)) &&
-		!(mtk_r32(eth, reg_map->adma.adma_rx_dbg0) & BIT(6));
-
-	if (oq_hang && cdm1_busy && adma_busy) {
-		if (++eth->reset.adma_hang_count > 2) {
-			eth->reset.adma_hang_count = 0;
-			ret = true;
-		}
-		goto out;
-	}
-
-	/* TDMA sanity checks */
-	ipq10 = mtk_r32(eth, reg_map->pse_iq_sta + 24) & GENMASK(23, 0);
-	cur_fsm = mtk_r32(eth, MTK_FE_CDM6_FSM);
-	tdma_glo_cfg = mtk_r32(eth, MTK_TDMA_GLO_CFG);
-	cur_fsm_rx = !(cur_fsm & GENMASK(27, 16));
-	cur_fsm_tx = !(cur_fsm & GENMASK(24, 0));
-	tx_busy = !(tdma_glo_cfg & BIT(1));
-	rx_busy = !(tdma_glo_cfg & BIT(3));
-
-	if (ipq10 && cur_fsm_tx && tx_busy &&
-	    cur_fsm_tx == !!(eth->reset.pre_fsm & GENMASK(24, 0)) &&
-	    ipq10 == eth->reset.pre_ipq10) {
-		if (++eth->reset.tdma_tx_hang_count > 2) {
-			eth->reset.tdma_tx_hang_count = 0;
-			ret = true;
-		}
-		goto out;
-	}
-
-	if (cur_fsm_rx && rx_busy &&
-	    cur_fsm_rx == (eth->reset.pre_fsm & GENMASK(27, 16))) {
-		if (++eth->reset.tdma_rx_hang_count > 2) {
-			eth->reset.tdma_rx_hang_count = 0;
-			ret = true;
-		}
-		goto out;
-	}
-
-	eth->reset.wdma_hang_count = 0;
-	eth->reset.qdma_hang_count = 0;
-	eth->reset.adma_hang_count = 0;
-	eth->reset.tdma_tx_hang_count = 0;
-	eth->reset.tdma_rx_hang_count = 0;
-out:
-	eth->reset.wdidx = wdidx;
-	eth->reset.pre_fsm = cur_fsm;
-	eth->reset.pre_ipq10 = ipq10;
-
-	return ret;
-}
-
-static void mtk_hw_reset_monitor_work(struct work_struct *work)
-{
-	struct delayed_work *del_work = to_delayed_work(work);
-	struct mtk_eth *eth =
-		container_of(del_work, struct mtk_eth, reset.monitor_work);
-
-	if (test_bit(MTK_RESETTING, &eth->state))
-		goto out;
-
-	/* DMA stuck checks */
-	if (mtk_hw_check_dma_hang(eth))
-		schedule_work(&eth->pending_work);
-
-out:
-	schedule_delayed_work(&eth->reset.monitor_work,
-			      MTK_DMA_MONITOR_TIMEOUT);
-}
-
 static int mtk_hw_init(struct mtk_eth *eth, bool reset)
 {
 	u32 dma_mask = ETHSYS_DMA_AG_MAP_ADMA | ETHSYS_DMA_AG_MAP_QDMA |
@@ -1665,7 +1542,6 @@ static void mtk_prepare_for_reset(struct mtk_eth *eth)
 	u32 val;
 	int i;
 
-	/* set FE PPE ports link down */
 	for (i = MTK_GMAC1_ID; i <= MTK_GMAC3_ID; i += 2) {
 		val = mtk_r32(eth, MTK_FE_GLO_CFG(i)) |
 		      MTK_FE_LINK_DOWN_P(PSE_PPE0_PORT);
@@ -1676,14 +1552,11 @@ static void mtk_prepare_for_reset(struct mtk_eth *eth)
 		mtk_w32(eth, val, MTK_FE_GLO_CFG(i));
 	}
 
-	/* adjust PPE configurations to prepare for reset */
 	for (i = 0; i < ARRAY_SIZE(eth->ppe); i++)
 		mtk_ppe_prepare_reset(eth->ppe[i]);
 
-	/* disable NETSYS interrupts */
 	mtk_w32(eth, 0, MTK_FE_INT_ENABLE);
 
-	/* force link down GMAC */
 	for (i = 0; i < 2; i++) {
 		val = mtk_r32(eth, MTK_MAC_MCR(i)) & ~MAC_MCR_FORCE_LINK;
 		mtk_w32(eth, val, MTK_MAC_MCR(i));
@@ -1701,6 +1574,7 @@ static void mtk_pending_work(struct work_struct *work)
 	set_bit(MTK_RESETTING, &eth->state);
 
 	mtk_prepare_for_reset(eth);
+	mtk_prepare_reset_fe(eth);
 	mtk_wed_fe_reset();
 	/* Run again reset preliminary configuration in order to avoid any
 	 * possible race during FE reset since it can run releasing RTNL lock.
@@ -2454,7 +2328,7 @@ static int mtk_probe(struct platform_device *pdev)
 
 	eth->rx_dim.mode = DIM_CQ_PERIOD_MODE_START_FROM_EQE;
 	INIT_WORK(&eth->rx_dim.work, mtk_dim_rx);
-	INIT_DELAYED_WORK(&eth->reset.monitor_work, mtk_hw_reset_monitor_work);
+	INIT_DELAYED_WORK(&eth->reset.monitor_work, mtk_dma_monitor_work);
 
 	eth->tx_dim.mode = DIM_CQ_PERIOD_MODE_START_FROM_EQE;
 	INIT_WORK(&eth->tx_dim.work, mtk_dim_tx);
