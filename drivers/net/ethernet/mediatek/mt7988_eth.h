@@ -19,6 +19,7 @@
 #include <linux/refcount.h>
 #include <linux/reset.h>
 #include <linux/rhashtable.h>
+#include <net/pkt_cls.h>
 #include <linux/u64_stats_sync.h>
 #include <net/page_pool/types.h>
 
@@ -1308,6 +1309,8 @@ struct mtk_soc_data {
  * @soc:		Holding specific data among vaious SoCs
  */
 
+struct mtk_htb;
+
 struct mtk_eth {
 	struct device *dev;
 	struct device *dma_dev;
@@ -1367,6 +1370,9 @@ struct mtk_eth {
 
 	struct bpf_prog __rcu *prog;
 
+	struct mtk_htb *htb;
+	bool htb_active;
+
 	struct {
 		struct delayed_work monitor_work;
 		u32 wdidx;
@@ -1403,7 +1409,6 @@ struct mtk_mac {
 	__be32 hwlro_ip[MTK_MAX_LRO_IP_CNT];
 	int hwlro_ip_cnt;
 	unsigned int syscfg0;
-	struct notifier_block device_notifier;
 };
 
 /* the struct describing the SoC. these are declared in the soc_xyz.c files */
@@ -1496,10 +1501,24 @@ int mtk_gmac_usxgmii_path_setup(struct mtk_eth *eth, int mac_id);
 int mtk_eth_offload_init(struct mtk_eth *eth, u8 id);
 int mtk_eth_setup_tc(struct net_device *dev, enum tc_setup_type type,
 		     void *type_data);
+#if !IS_ENABLED(CONFIG_NET_MEDIATEK_HNAT)
+int mtk_flow_setup_tc(struct net_device *dev, enum tc_setup_type type,
+		      void *type_data);
+#else
+static inline int mtk_flow_setup_tc(struct net_device *dev,
+				     enum tc_setup_type type,
+				     void *type_data)
+{
+	return -EOPNOTSUPP;
+}
+#endif
 int mtk_flow_offload_cmd(struct mtk_eth *eth, struct flow_cls_offload *cls,
 			 int ppe_index);
 void mtk_flow_offload_cleanup(struct mtk_eth *eth, struct list_head *list);
 void mtk_eth_set_dma_device(struct mtk_eth *eth, struct device *dma_dev);
 u32 mtk_rss_indr_table(struct mtk_rss_params *rss_params, int index);
+
+int mtk_htb_setup_tc(struct mtk_eth *eth, struct net_device *dev,
+		      struct tc_htb_qopt_offload *opt);
 
 #endif /* MT7988_ETH_H */

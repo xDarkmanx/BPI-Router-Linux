@@ -612,38 +612,6 @@ void mtk_hwlro_rx_uninit(struct mtk_eth *eth)
 	mtk_w32(eth, 0, reg_map->adma.lro_ctrl_dw0);
 }
 
-void mtk_set_queue_speed(struct mtk_eth *eth, unsigned int idx, int speed)
-{
-	const struct mtk_soc_data *soc = eth->soc;
-	u32 ofs, val;
-
-	val = MTK_QTX_SCH_MIN_RATE_EN |
-	      /* minimum: 10 Mbps */
-	      FIELD_PREP(MTK_QTX_SCH_MIN_RATE_MAN, 1) |
-	      FIELD_PREP(MTK_QTX_SCH_MIN_RATE_EXP, 4) |
-	      MTK_QTX_SCH_LEAKY_BUCKET_SIZE;
-
-	switch (speed) {
-	case SPEED_10:
-		val |= MTK_QTX_SCH_MAX_RATE_EN |
-		       FIELD_PREP(MTK_QTX_SCH_MAX_RATE_MAN, 1) |
-		       FIELD_PREP(MTK_QTX_SCH_MAX_RATE_EXP, 4) |
-		       FIELD_PREP(MTK_QTX_SCH_MAX_RATE_WEIGHT, 1);
-		break;
-	case SPEED_100:
-		val |= MTK_QTX_SCH_MAX_RATE_EN |
-		       FIELD_PREP(MTK_QTX_SCH_MAX_RATE_MAN, 1) |
-		       FIELD_PREP(MTK_QTX_SCH_MAX_RATE_EXP, 5) |
-		       FIELD_PREP(MTK_QTX_SCH_MAX_RATE_WEIGHT, 1);
-		break;
-	default:
-		break;
-	}
-
-	ofs = MTK_QTX_OFFSET * idx;
-	mtk_w32(eth, val, soc->reg_map->qdma.qtx_sch + ofs);
-}
-
 u32 mtk_rss_indr_table(struct mtk_rss_params *rss_params, int index)
 {
 	u32 val = 0;

@@ -97,7 +97,6 @@ void mtk_dim_tx(struct work_struct *work);
  * RSS & QDMA Scheduler
  * ========================================== */
 u32 mtk_rss_indr_table(struct mtk_rss_params *rss_params, int index);
-void mtk_set_queue_speed(struct mtk_eth *eth, unsigned int idx, int speed);
 
 /* ==========================================
  * HW LRO

@@ -1060,49 +1060,6 @@ static void mtk_gdm_config(struct mtk_eth *eth, u32 id, u32 config)
 	mtk_w32(eth, val, MTK_GDMA_FWD_CFG(id));
 }
 
-static int mtk_device_event(struct notifier_block *n, unsigned long event,
-			    void *ptr)
-{
-	struct mtk_mac *mac = container_of(n, struct mtk_mac, device_notifier);
-	struct mtk_eth *eth = mac->hw;
-	struct net_device *dev = netdev_notifier_info_to_dev(ptr);
-	struct ethtool_link_ksettings s;
-	struct net_device *ldev;
-	struct list_head *iter;
-	struct dsa_port *dp;
-
-	if (event != NETDEV_CHANGE)
-		return NOTIFY_DONE;
-
-	netdev_for_each_lower_dev(dev, ldev, iter) {
-		if (netdev_priv(ldev) == mac)
-			goto found;
-	}
-
-	return NOTIFY_DONE;
-
-found:
-	if (!dsa_user_dev_check(dev))
-		return NOTIFY_DONE;
-
-	if (__ethtool_get_link_ksettings(dev, &s))
-		return NOTIFY_DONE;
-
-	if (s.base.speed == 0 || s.base.speed == ((__u32)-1))
-		return NOTIFY_DONE;
-
-	dp = dsa_port_from_netdev(dev);
-	if (dp->index >= MTK_QDMA_NUM_QUEUES)
-		return NOTIFY_DONE;
-
-	if (mac->speed > 0 && mac->speed <= s.base.speed)
-		s.base.speed = 0;
-
-	mtk_set_queue_speed(eth, dp->index + 3, s.base.speed);
-
-	return NOTIFY_DONE;
-}
-
 static int mtk_open(struct net_device *dev)
 {
 	struct mtk_mac *mac = netdev_priv(dev);
@@ -1825,7 +1782,6 @@ static int mtk_unreg_dev(struct mtk_eth *eth)
 		if (!eth->netdev[i])
 			continue;
 		mac = netdev_priv(eth->netdev[i]);
-		unregister_netdevice_notifier(&mac->device_notifier);
 		unregister_netdev(eth->netdev[i]);
 	}
 
@@ -2123,7 +2079,14 @@ static u16 mtk_select_queue(struct net_device *dev, struct sk_buff *skb,
 			    struct net_device *sb_dev)
 {
 	struct mtk_mac *mac = netdev_priv(dev);
+	struct mtk_eth *eth = mac->hw;
 	unsigned int queue = 0;
+
+	if (eth->htb_active) {
+		queue = skb_get_queue_mapping(skb);
+		if (queue < dev->num_tx_queues)
+			return queue;
+	}
 
 	if (netdev_uses_dsa(dev))
 		queue = skb_get_queue_mapping(skb) + 3;
@@ -2213,9 +2176,7 @@ static const struct net_device_ops mtk_netdev_ops = {
 #ifdef CONFIG_NET_POLL_CONTROLLER
 	.ndo_poll_controller = mtk_poll_controller,
 #endif
-#if !IS_ENABLED(CONFIG_NET_MEDIATEK_HNAT)
 	.ndo_setup_tc = mtk_eth_setup_tc,
-#endif
 	.ndo_bpf = mtk_xdp,
 	.ndo_xdp_xmit = mtk_xdp_xmit,
 	.ndo_select_queue = mtk_select_queue,
@@ -2360,9 +2321,6 @@ static int mtk_add_mac(struct mtk_eth *eth, struct device_node *np)
 	eth->netdev[id]->dev.of_node = np;
 
 	eth->netdev[id]->max_mtu = MTK_MAX_RX_LENGTH_2K - MTK_RX_ETH_HLEN;
-
-	mac->device_notifier.notifier_call = mtk_device_event;
-	register_netdevice_notifier(&mac->device_notifier);
 
 	eth->netdev[id]->xdp_features =
 		NETDEV_XDP_ACT_BASIC | NETDEV_XDP_ACT_REDIRECT |

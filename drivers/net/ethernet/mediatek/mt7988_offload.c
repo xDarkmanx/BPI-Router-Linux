@@ -627,7 +627,7 @@ static int mtk_eth_setup_tc_block(struct net_device *dev,
 	}
 }
 
-int mtk_eth_setup_tc(struct net_device *dev, enum tc_setup_type type,
+int mtk_flow_setup_tc(struct net_device *dev, enum tc_setup_type type,
 		     void *type_data)
 {
 	switch (type) {
