@@ -1937,12 +1937,11 @@ static int htb_change_class(struct Qdisc *sch, u32 classid,
 		new_q = qdisc_create_dflt(dev_queue, &pfifo_qdisc_ops,
 					  classid, NULL);
 		if (q->offload) {
-			/* One ref for cl->leaf.q, the other for dev_queue->qdisc. */
 			if (new_q)
 				qdisc_refcount_inc(new_q);
 			old_q = htb_graft_helper(dev_queue, new_q);
-			/* No qdisc_put needed. */
-			WARN_ON(!(old_q->flags & TCQ_F_BUILTIN));
+			if (old_q && !(old_q->flags & TCQ_F_BUILTIN))
+				qdisc_put(old_q);
 		}
 		sch_tree_lock(sch);
 		if (parent && !parent->level) {
