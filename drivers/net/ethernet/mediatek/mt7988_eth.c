@@ -34,6 +34,7 @@
 #include "mt7988_dma.h"
 #include "mt7988_eth.h"
 #include "mt7988_reset.h"
+#include "mt7988_debugfs.h"
 
 #include "mtk_wed.h"
 
@@ -2574,6 +2575,8 @@ static int mtk_probe(struct platform_device *pdev)
 	schedule_delayed_work(&eth->reset.monitor_work,
 			      MTK_DMA_MONITOR_TIMEOUT);
 
+	mt7988_eth_debugfs_init(eth);
+
 	return 0;
 
 err_unreg_netdev:
@@ -2596,6 +2599,8 @@ static void mtk_remove(struct platform_device *pdev)
 	struct mtk_eth *eth = platform_get_drvdata(pdev);
 	struct mtk_mac *mac;
 	int i;
+
+	mt7988_eth_debugfs_exit(eth);
 
 	/* stop all devices to make sure that dma is properly shut down */
 	for (i = 0; i < MTK_MAX_DEVS; i++) {
