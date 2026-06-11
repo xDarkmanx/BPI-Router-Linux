@@ -78,7 +78,7 @@ int mtk_poll_tx(struct mtk_eth *eth, int budget);
  * ========================================== */
 int mtk_xdp_frame_map(struct mtk_eth *eth, struct net_device *dev,
 		      struct mtk_tx_dma_desc_info *txd_info,
-		      struct mtk_tx_dma *txd, struct mtk_tx_buf *tx_buf,
+		      struct mtk_tx_dma_v2 *txd, struct mtk_tx_buf *tx_buf,
 		      void *data, u16 headroom, int index, bool dma_map);
 int mtk_xdp_submit_frame(struct mtk_eth *eth, struct xdp_frame *xdpf,
 			 struct net_device *dev, bool dma_map);

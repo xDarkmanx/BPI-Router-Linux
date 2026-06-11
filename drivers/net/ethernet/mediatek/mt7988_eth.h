@@ -57,7 +57,7 @@
 
 #define MTK_QRX_OFFSET 0x10
 
-#define MTK_MAX_RX_RING_NUM (mtk_is_netsys_v2_or_greater(eth) ? 8 : 4)
+#define MTK_MAX_RX_RING_NUM 8
 #define MTK_HW_LRO_DMA_SIZE 512
 
 #define MTK_MAX_LRO_RX_LENGTH (4096 * 3)
@@ -192,19 +192,17 @@
 #define MTK_PRX_DRX_IDX_CFG(x) (MTK_PRX_DRX_IDX0 + (x * 0x10))
 
 /* ADMA HW LRO Control Registers */
-#define MTK_HW_LRO_RING_NUM (mtk_is_netsys_v2_or_greater(eth) ? 4 : 3)
-#define MTK_HW_LRO_RING(x) ((x) + (mtk_is_netsys_v2_or_greater(eth) ? 4 : 1))
-#define MTK_LRO_CRSN_BNW BIT((mtk_is_netsys_v2_or_greater(eth) ? 22 : 6))
+#define MTK_HW_LRO_RING_NUM 4
+#define MTK_HW_LRO_RING(x) ((x) + 4)
+#define MTK_LRO_CRSN_BNW BIT(22)
 #define MTK_LRO_EN BIT(0)
 #define MTK_NON_LRO_MULTI_EN BIT(2)
 #define MTK_LRO_DLY_INT_EN BIT(5)
 #define MTK_L3_CKS_UPD_EN BIT(7)
 #define MTK_L3_CKS_UPD_EN_V2 BIT(19)
 #define MTK_LRO_ALT_PKT_CNT_MODE BIT(21)
-#define MTK_LRO_RING_RELINQUISH_REQ \
-	(0x7 << (mtk_is_netsys_v2_or_greater(eth) ? 24 : 26))
-#define MTK_LRO_RING_RELINQUISH_DONE \
-	(0x7 << (mtk_is_netsys_v2_or_greater(eth) ? 28 : 29))
+#define MTK_LRO_RING_RELINQUISH_REQ (0x7 << 24)
+#define MTK_LRO_RING_RELINQUISH_DONE (0x7 << 28)
 
 #define MTK_CTRL_DW0_SDL_OFFSET (3)
 #define MTK_CTRL_DW0_SDL_MASK BITS(3, 18)
@@ -341,9 +339,7 @@
 		 (BIT(24 + (ring_no))) :         \
 		 ((ring_no) ? BIT(16 + (ring_no)) : BIT(14)))
 
-#define MTK_RX_DONE_INT(ring_no)                                          \
-	(mtk_is_netsys_v2_or_greater(eth) ? MTK_RX_DONE_INT_V2(ring_no) : \
-					    MTK_RX_DONE_INT_V1(ring_no))
+#define MTK_RX_DONE_INT(ring_no) MTK_RX_DONE_INT_V2(ring_no)
 
 #define MTK_TX_DONE_DLY BIT(28)
 #define MTK_RX_DONE_INT3 BIT(19)
@@ -676,17 +672,8 @@
 #define MTK_STAT_OFFSET 0x40
 #define MTK_STAT_OFFSET_V3 0x80
 #define MTK_GDM_RX_FC 0x24
-#define MTK_GDM_RX_FC_OFFSET(eth, i)                                  \
-	(i * (mtk_is_netsys_v3_or_greater(eth) ? MTK_STAT_OFFSET_V3 : \
-						 MTK_STAT_OFFSET) +   \
-	 MTK_GDM_RX_FC)
-
-struct mtk_rx_dma {
-	unsigned int rxd1;
-	unsigned int rxd2;
-	unsigned int rxd3;
-	unsigned int rxd4;
-} __packed __aligned(4);
+#define MTK_GDM_RX_FC_OFFSET(eth, i) \
+	(i * MTK_STAT_OFFSET_V3 + MTK_GDM_RX_FC)
 
 struct mtk_rx_dma_v2 {
 	unsigned int rxd1;
@@ -697,13 +684,6 @@ struct mtk_rx_dma_v2 {
 	unsigned int rxd6;
 	unsigned int rxd7;
 	unsigned int rxd8;
-} __packed __aligned(4);
-
-struct mtk_tx_dma {
-	unsigned int txd1;
-	unsigned int txd2;
-	unsigned int txd3;
-	unsigned int txd4;
 } __packed __aligned(4);
 
 struct mtk_tx_dma_v2 {
@@ -943,8 +923,8 @@ struct mtk_tx_ring {
 	void *dma;
 	struct mtk_tx_buf *buf;
 	dma_addr_t phys;
-	struct mtk_tx_dma *next_free;
-	struct mtk_tx_dma *last_free;
+	struct mtk_tx_dma_v2 *next_free;
+	struct mtk_tx_dma_v2 *last_free;
 	u32 last_free_ptr;
 	u16 thresh;
 	atomic_t free_count;
@@ -1012,7 +992,6 @@ struct mtk_napi {
 
 enum mkt_eth_capabilities {
 	MTK_RGMII_BIT = 0,
-	MTK_TRGMII_BIT,
 	MTK_SGMII_BIT,
 	MTK_USXGMII_BIT,
 	MTK_2P5GPHY_BIT,
@@ -1023,8 +1002,6 @@ enum mkt_eth_capabilities {
 	MTK_SHARED_SGMII_BIT,
 	MTK_HWLRO_BIT,
 	MTK_RSS_BIT,
-	MTK_SHARED_INT_BIT,
-	MTK_TRGMII_MT7621_CLK_BIT,
 	MTK_QDMA_BIT,
 	MTK_RSTCTRL_PPE1_BIT,
 	MTK_RSTCTRL_PPE2_BIT,
@@ -1059,7 +1036,6 @@ enum mkt_eth_capabilities {
 
 /* Supported hardware group on SoCs */
 #define MTK_RGMII BIT_ULL(MTK_RGMII_BIT)
-#define MTK_TRGMII BIT_ULL(MTK_TRGMII_BIT)
 #define MTK_SGMII BIT_ULL(MTK_SGMII_BIT)
 #define MTK_USXGMII BIT_ULL(MTK_USXGMII_BIT)
 #define MTK_2P5GPHY BIT_ULL(MTK_2P5GPHY_BIT)
@@ -1070,8 +1046,6 @@ enum mkt_eth_capabilities {
 #define MTK_SHARED_SGMII BIT_ULL(MTK_SHARED_SGMII_BIT)
 #define MTK_HWLRO BIT_ULL(MTK_HWLRO_BIT)
 #define MTK_RSS BIT_ULL(MTK_RSS_BIT)
-#define MTK_SHARED_INT BIT_ULL(MTK_SHARED_INT_BIT)
-#define MTK_TRGMII_MT7621_CLK BIT_ULL(MTK_TRGMII_MT7621_CLK_BIT)
 #define MTK_QDMA BIT_ULL(MTK_QDMA_BIT)
 #define MTK_RSTCTRL_PPE1 BIT_ULL(MTK_RSTCTRL_PPE1_BIT)
 #define MTK_RSTCTRL_PPE2 BIT_ULL(MTK_RSTCTRL_PPE2_BIT)
@@ -1108,7 +1082,6 @@ enum mkt_eth_capabilities {
 #define MTK_ETH_PATH_GMAC3_USXGMII BIT_ULL(MTK_ETH_PATH_GMAC3_USXGMII_BIT)
 
 #define MTK_GMAC1_RGMII (MTK_ETH_PATH_GMAC1_RGMII | MTK_RGMII)
-#define MTK_GMAC1_TRGMII (MTK_ETH_PATH_GMAC1_TRGMII | MTK_TRGMII)
 #define MTK_GMAC1_SGMII (MTK_ETH_PATH_GMAC1_SGMII | MTK_SGMII)
 #define MTK_GMAC2_RGMII (MTK_ETH_PATH_GMAC2_RGMII | MTK_RGMII)
 #define MTK_GMAC2_SGMII (MTK_ETH_PATH_GMAC2_SGMII | MTK_SGMII)
@@ -1151,33 +1124,6 @@ enum mkt_eth_capabilities {
 	(MTK_ETH_MUX_GMAC123_TO_USXGMII | MTK_MUX | MTK_INFRA)
 
 #define MTK_HAS_CAPS(caps, _x) (((caps) & (_x)) == (_x))
-
-#define MT7621_CAPS                                             \
-	(MTK_GMAC1_RGMII | MTK_GMAC1_TRGMII | MTK_GMAC2_RGMII | \
-	 MTK_SHARED_INT | MTK_TRGMII_MT7621_CLK | MTK_QDMA)
-
-#define MT7622_CAPS                                                   \
-	(MTK_GMAC1_RGMII | MTK_GMAC1_SGMII | MTK_GMAC2_RGMII |        \
-	 MTK_GMAC2_SGMII | MTK_GDM1_ESW | MTK_MUX_GDM1_TO_GMAC1_ESW | \
-	 MTK_MUX_GMAC1_GMAC2_TO_SGMII_RGMII | MTK_QDMA)
-
-#define MT7623_CAPS \
-	(MTK_GMAC1_RGMII | MTK_GMAC1_TRGMII | MTK_GMAC2_RGMII | MTK_QDMA)
-
-
-#define MT7629_CAPS                                                           \
-	(MTK_GMAC1_SGMII | MTK_GMAC2_SGMII | MTK_GMAC2_GEPHY | MTK_GDM1_ESW | \
-	 MTK_MUX_GDM1_TO_GMAC1_ESW | MTK_MUX_GMAC2_GMAC0_TO_GEPHY |           \
-	 MTK_MUX_U3_GMAC2_TO_QPHY | MTK_MUX_GMAC12_TO_GEPHY_SGMII | MTK_QDMA)
-
-#define MT7981_CAPS                                                            \
-	(MTK_GMAC1_SGMII | MTK_GMAC2_SGMII | MTK_GMAC2_GEPHY |                 \
-	 MTK_MUX_GMAC12_TO_GEPHY_SGMII | MTK_QDMA | MTK_MUX_U3_GMAC2_TO_QPHY | \
-	 MTK_U3_COPHY_V2 | MTK_RSTCTRL_PPE1 | MTK_SRAM)
-
-#define MT7986_CAPS                                                          \
-	(MTK_GMAC1_SGMII | MTK_GMAC2_SGMII | MTK_MUX_GMAC12_TO_GEPHY_SGMII | \
-	 MTK_QDMA | MTK_RSTCTRL_PPE1 | MTK_SRAM | MTK_RSS)
 
 #define MT7988_CAPS                                                           \
 	(MTK_36BIT_DMA | MTK_GDM1_ESW | MTK_GMAC1_SGMII | MTK_GMAC2_2P5GPHY | \
@@ -1468,16 +1414,6 @@ static inline bool mtk_is_netsys_v1(struct mtk_eth *eth)
 	return eth->soc->version == 1;
 }
 
-static inline bool mtk_is_netsys_v2_or_greater(struct mtk_eth *eth)
-{
-	return eth->soc->version > 1;
-}
-
-static inline bool mtk_is_netsys_v3_or_greater(struct mtk_eth *eth)
-{
-	return eth->soc->version > 2;
-}
-
 static inline struct mtk_foe_entry *mtk_foe_get_entry(struct mtk_ppe *ppe,
 						      u16 hash)
 {
@@ -1488,74 +1424,47 @@ static inline struct mtk_foe_entry *mtk_foe_get_entry(struct mtk_ppe *ppe,
 
 static inline u32 mtk_get_ib1_ts_mask(struct mtk_eth *eth)
 {
-	if (mtk_is_netsys_v2_or_greater(eth))
-		return MTK_FOE_IB1_BIND_TIMESTAMP_V2;
-
-	return MTK_FOE_IB1_BIND_TIMESTAMP;
+	return MTK_FOE_IB1_BIND_TIMESTAMP_V2;
 }
 
 static inline u32 mtk_get_ib1_ppoe_mask(struct mtk_eth *eth)
 {
-	if (mtk_is_netsys_v2_or_greater(eth))
-		return MTK_FOE_IB1_BIND_PPPOE_V2;
-
-	return MTK_FOE_IB1_BIND_PPPOE;
+	return MTK_FOE_IB1_BIND_PPPOE_V2;
 }
 
 static inline u32 mtk_get_ib1_vlan_tag_mask(struct mtk_eth *eth)
 {
-	if (mtk_is_netsys_v2_or_greater(eth))
-		return MTK_FOE_IB1_BIND_VLAN_TAG_V2;
-
-	return MTK_FOE_IB1_BIND_VLAN_TAG;
+	return MTK_FOE_IB1_BIND_VLAN_TAG_V2;
 }
 
 static inline u32 mtk_get_ib1_vlan_layer_mask(struct mtk_eth *eth)
 {
-	if (mtk_is_netsys_v2_or_greater(eth))
-		return MTK_FOE_IB1_BIND_VLAN_LAYER_V2;
-
-	return MTK_FOE_IB1_BIND_VLAN_LAYER;
+	return MTK_FOE_IB1_BIND_VLAN_LAYER_V2;
 }
 
 static inline u32 mtk_prep_ib1_vlan_layer(struct mtk_eth *eth, u32 val)
 {
-	if (mtk_is_netsys_v2_or_greater(eth))
-		return FIELD_PREP(MTK_FOE_IB1_BIND_VLAN_LAYER_V2, val);
-
-	return FIELD_PREP(MTK_FOE_IB1_BIND_VLAN_LAYER, val);
+	return FIELD_PREP(MTK_FOE_IB1_BIND_VLAN_LAYER_V2, val);
 }
 
 static inline u32 mtk_get_ib1_vlan_layer(struct mtk_eth *eth, u32 val)
 {
-	if (mtk_is_netsys_v2_or_greater(eth))
-		return FIELD_GET(MTK_FOE_IB1_BIND_VLAN_LAYER_V2, val);
-
-	return FIELD_GET(MTK_FOE_IB1_BIND_VLAN_LAYER, val);
+	return FIELD_GET(MTK_FOE_IB1_BIND_VLAN_LAYER_V2, val);
 }
 
 static inline u32 mtk_get_ib1_pkt_type_mask(struct mtk_eth *eth)
 {
-	if (mtk_is_netsys_v2_or_greater(eth))
-		return MTK_FOE_IB1_PACKET_TYPE_V2;
-
-	return MTK_FOE_IB1_PACKET_TYPE;
+	return MTK_FOE_IB1_PACKET_TYPE_V2;
 }
 
 static inline u32 mtk_get_ib1_pkt_type(struct mtk_eth *eth, u32 val)
 {
-	if (mtk_is_netsys_v2_or_greater(eth))
-		return FIELD_GET(MTK_FOE_IB1_PACKET_TYPE_V2, val);
-
-	return FIELD_GET(MTK_FOE_IB1_PACKET_TYPE, val);
+	return FIELD_GET(MTK_FOE_IB1_PACKET_TYPE_V2, val);
 }
 
 static inline u32 mtk_get_ib2_multicast_mask(struct mtk_eth *eth)
 {
-	if (mtk_is_netsys_v2_or_greater(eth))
-		return MTK_FOE_IB2_MULTICAST_V2;
-
-	return MTK_FOE_IB2_MULTICAST;
+	return MTK_FOE_IB2_MULTICAST_V2;
 }
 
 static inline bool mtk_interface_mode_is_xgmii(phy_interface_t interface)

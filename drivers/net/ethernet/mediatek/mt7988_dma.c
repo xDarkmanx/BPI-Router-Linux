@@ -455,7 +455,7 @@ void mtk_rx_clean(struct mtk_eth *eth, struct mtk_rx_ring *ring, bool in_sram)
 
 	if (ring->data && ring->dma) {
 		for (i = 0; i < ring->dma_size; i++) {
-			struct mtk_rx_dma *rxd;
+			struct mtk_rx_dma_v2 *rxd;
 
 			if (!ring->data[i])
 				continue;
@@ -464,7 +464,9 @@ void mtk_rx_clean(struct mtk_eth *eth, struct mtk_rx_ring *ring, bool in_sram)
 			if (!rxd->rxd1)
 				continue;
 
-			dma_unmap_single(eth->dma_dev, (u64)rxd->rxd1,
+			dma_unmap_single(eth->dma_dev,
+					 ((u64)rxd->rxd1 |
+					  RX_DMA_GET_ADDR64(rxd->rxd2)),
 					 ring->buf_size, DMA_FROM_DEVICE);
 			mtk_rx_put_buff(ring, ring->data[i], false);
 		}
@@ -928,7 +930,7 @@ void mtk_tx_unmap(struct mtk_eth *eth, struct mtk_tx_buf *tx_buf,
 }
 
 static void setup_tx_buf(struct mtk_eth *eth, struct mtk_tx_buf *tx_buf,
-			 struct mtk_tx_dma *txd, dma_addr_t mapped_addr,
+			 struct mtk_tx_dma_v2 *txd, dma_addr_t mapped_addr,
 			 size_t size, int idx)
 {
 	dma_unmap_addr_set(tx_buf, dma_addr0, mapped_addr);
@@ -1010,7 +1012,7 @@ int mtk_tx_map(struct sk_buff *skb, struct net_device *dev, int tx_num,
 	struct mtk_mac *mac = netdev_priv(dev);
 	struct mtk_eth *eth = mac->hw;
 	const struct mtk_soc_data *soc = eth->soc;
-	struct mtk_tx_dma *itxd, *txd;
+	struct mtk_tx_dma_v2 *itxd, *txd;
 	struct mtk_tx_buf *itx_buf, *tx_buf;
 	int i, n_desc = 1;
 	int queue = skb_get_queue_mapping(skb);
@@ -1199,7 +1201,7 @@ void mtk_rx_put_buff(struct mtk_rx_ring *ring, void *data, bool napi)
 
 int mtk_xdp_frame_map(struct mtk_eth *eth, struct net_device *dev,
 		      struct mtk_tx_dma_desc_info *txd_info,
-		      struct mtk_tx_dma *txd, struct mtk_tx_buf *tx_buf,
+		      struct mtk_tx_dma_v2 *txd, struct mtk_tx_buf *tx_buf,
 		      void *data, u16 headroom, int index, bool dma_map)
 {
 	struct mtk_mac *mac = netdev_priv(dev);
@@ -1245,7 +1247,7 @@ int mtk_xdp_submit_frame(struct mtk_eth *eth, struct xdp_frame *xdpf,
 	};
 	int err, index = 0, n_desc = 1, nr_frags;
 	struct mtk_tx_buf *htx_buf, *tx_buf;
-	struct mtk_tx_dma *htxd, *txd;
+	struct mtk_tx_dma_v2 *htxd, *txd;
 	void *data = xdpf->data;
 
 	if (unlikely(test_bit(MTK_RESETTING, &eth->state)))
@@ -1607,7 +1609,7 @@ static int mtk_poll_tx_qdma(struct mtk_eth *eth, int budget,
 	struct mtk_tx_ring *ring = &eth->tx_ring;
 	struct mtk_tx_buf *tx_buf;
 	struct xdp_frame_bulk bq;
-	struct mtk_tx_dma *desc;
+	struct mtk_tx_dma_v2 *desc;
 	u32 cpu, dma;
 
 	cpu = ring->last_free_ptr;
