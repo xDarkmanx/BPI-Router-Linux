@@ -990,15 +990,18 @@ static irqreturn_t mtk_handle_irq_rx(int irq, void *priv)
 {
 	struct mtk_napi *rx_napi = priv;
 	struct mtk_eth *eth = rx_napi->eth;
-	struct mtk_rx_ring *ring = rx_napi->rx_ring;
+	u32 int_mask = MTK_RX_DONE_INT(rx_napi->rx_ring->ring_no);
+
+	if (rx_napi->rx_ring2)
+		int_mask |= MTK_RX_DONE_INT(rx_napi->rx_ring2->ring_no);
 
 	eth->rx_events++;
 	if (unlikely(!(mtk_r32(eth, eth->soc->reg_map->adma.irq_status) &
-		       MTK_RX_DONE_INT(ring->ring_no))))
+		       int_mask)))
 		return IRQ_NONE;
 
 	if (likely(napi_schedule_prep(&rx_napi->napi))) {
-		mtk_rx_irq_disable(eth, MTK_RX_DONE_INT(ring->ring_no));
+		mtk_rx_irq_disable(eth, int_mask);
 		__napi_schedule(&rx_napi->napi);
 	}
 
@@ -1050,10 +1053,10 @@ static void mtk_poll_controller(struct net_device *dev)
 	struct mtk_eth *eth = mac->hw;
 
 	mtk_tx_irq_disable(eth, MTK_TX_DONE_INT);
-	mtk_rx_irq_disable(eth, MTK_RX_DONE_INT(0));
+	mtk_rx_irq_disable(eth, MTK_RX_DONE_INT(0) | MTK_RX_DONE_INT(4));
 	mtk_handle_irq_rx(eth->irq_fe[2], &eth->rx_napi[0]);
 	mtk_tx_irq_enable(eth, MTK_TX_DONE_INT);
-	mtk_rx_irq_enable(eth, MTK_RX_DONE_INT(0));
+	mtk_rx_irq_enable(eth, MTK_RX_DONE_INT(0) | MTK_RX_DONE_INT(4));
 }
 #endif
 
@@ -1131,20 +1134,15 @@ static int mtk_open(struct net_device *dev)
 		mtk_w32(eth, 0, MTK_RST_GL);
 
 		napi_enable(&eth->tx_napi);
-		napi_enable(&eth->rx_napi[0].napi);
 		mtk_tx_irq_enable(eth, MTK_TX_DONE_INT);
-		mtk_rx_irq_enable(eth, MTK_RX_DONE_INT(0));
 
-		if (MTK_HAS_CAPS(eth->soc->caps, MTK_RSS)) {
-			for (i = 0; i < MTK_RX_RSS_NUM; i++) {
-				napi_enable(
-					&eth->rx_napi[MTK_RSS_RING(i)].napi);
-				mtk_rx_irq_enable(
-					eth, MTK_RX_DONE_INT(MTK_RSS_RING(i)));
-			}
+		for (i = 0; i < MTK_RX_NAPI_NUM; i++) {
+			u32 int_mask = MTK_RX_DONE_INT(i) |
+				       MTK_RX_DONE_INT(i + MTK_RX_NAPI_NUM);
+
+			napi_enable(&eth->rx_napi[i].napi);
+			mtk_rx_irq_enable(eth, int_mask);
 		}
-
-		/* hwlro Removed */
 		refcount_set(&eth->dma_refcnt, 1);
 	} else {
 		refcount_inc(&eth->dma_refcnt);
@@ -1176,19 +1174,15 @@ static int mtk_stop(struct net_device *dev)
 		mtk_gdm_config(eth, i, MTK_GDMA_DROP_ALL);
 
 	mtk_tx_irq_disable(eth, MTK_TX_DONE_INT);
-	mtk_rx_irq_disable(eth, MTK_RX_DONE_INT(0));
 	napi_disable(&eth->tx_napi);
-	napi_disable(&eth->rx_napi[0].napi);
 
-	if (MTK_HAS_CAPS(eth->soc->caps, MTK_RSS)) {
-		for (i = 0; i < MTK_RX_RSS_NUM; i++) {
-			mtk_rx_irq_disable(eth,
-					   MTK_RX_DONE_INT(MTK_RSS_RING(i)));
-			napi_disable(&eth->rx_napi[MTK_RSS_RING(i)].napi);
-		}
+	for (i = 0; i < MTK_RX_NAPI_NUM; i++) {
+		u32 int_mask = MTK_RX_DONE_INT(i) |
+			       MTK_RX_DONE_INT(i + MTK_RX_NAPI_NUM);
+
+		mtk_rx_irq_disable(eth, int_mask);
+		napi_disable(&eth->rx_napi[i].napi);
 	}
-
-	/* БЛОК HW LRO УДАЛЕН */
 
 	cancel_work_sync(&eth->rx_dim.work);
 	cancel_work_sync(&eth->tx_dim.work);
@@ -1909,8 +1903,8 @@ static int mtk_get_rxfh(struct net_device *dev, struct ethtool_rxfh_param *rxfh)
 	struct mtk_eth *eth = mac->hw;
 	struct mtk_rss_params *rss_params = &eth->rss_params;
 	int i;
-	if (rxfh->hfunc)
-		rxfh->hfunc = ETH_RSS_HASH_TOP; /* Toeplitz */
+
+	rxfh->hfunc = ETH_RSS_HASH_TOP;
 	if (key) {
 		memcpy(key, rss_params->hash_key, sizeof(rss_params->hash_key));
 	}
@@ -1994,7 +1988,7 @@ static void mtk_get_channels(struct net_device *dev,
 	struct mtk_mac *mac = netdev_priv(dev);
 	struct mtk_eth *eth = mac->hw;
 
-	/* У нас 1 базовая RX очередь + 3 RSS очереди = 4 */
+	/* 4 RSS queues (rings 0-3), each NAPI also polls companion ring 4-7 */
 	if (MTK_HAS_CAPS(eth->soc->caps, MTK_RSS)) {
 		ch->max_rx = MTK_RX_NAPI_NUM;
 		ch->rx_count = MTK_RX_NAPI_NUM;
@@ -2466,41 +2460,31 @@ static int mtk_probe(struct platform_device *pdev)
 
 	/* ==================== ИНТЕРРУПТЫ ==================== */
 
-	/* TX IRQ (SPI 196) - пока на любом CPU (ядро само решит) */
+	/* TX IRQ (SPI 196) */
 	err = devm_request_irq(eth->dev, eth->irq_fe[1], mtk_handle_irq_tx, 0,
-			       dev_name(eth->dev), eth);
+			       "mtk-tx", eth);
 	if (err)
 		goto err_free_dev;
 
 	/* FE Misc IRQ */
 	err = devm_request_irq(eth->dev, eth->irq_fe[2], mtk_handle_fe_irq, 0,
-			       dev_name(eth->dev), eth);
+			       "mtk-fe", eth);
 	if (err)
 		goto err_free_dev;
 
-	/* Базовый RX IRQ (Ring 0 / SPI 189) -> Привязываем к CPU0 */
-	err = devm_request_irq(eth->dev, eth->irq_adma[0], mtk_handle_irq_rx,
-			       IRQF_SHARED, dev_name(eth->dev),
-			       &eth->rx_napi[0]);
-	if (err)
-		goto err_free_dev;
-	irq_set_affinity_hint(eth->irq_adma[0], cpumask_of(0));
+	/* ADMA RX IRQs (GRP0-3 / SPI 189-192) -> NAPI 0-3, per-CPU affinity */
+	for (i = 0; i < MTK_RX_NAPI_NUM; i++) {
+		char *name = devm_kasprintf(eth->dev, GFP_KERNEL,
+					    "mtk-TxRx-%d", i);
+		if (!name)
+			goto err_free_dev;
 
-	/* RSS RX IRQs (Rings 1, 2, 3 / SPI 190, 191, 192) -> Привязываем к CPU 1, 2, 3 */
-	if (MTK_HAS_CAPS(eth->soc->caps, MTK_RSS)) {
-		for (i = 0; i < MTK_RX_RSS_NUM; i++) {
-			int ring_no = MTK_RSS_RING(i); // 1, 2, 3
-			int irq = eth->irq_adma[ring_no];
-
-			err = devm_request_irq(eth->dev, irq, mtk_handle_irq_rx,
-					       IRQF_SHARED, dev_name(eth->dev),
-					       &eth->rx_napi[ring_no]);
-			if (err)
-				goto err_free_dev;
-
-			/* Hardcode affinity: Ring N -> CPU N */
-			irq_set_affinity_hint(irq, cpumask_of(ring_no));
-		}
+		err = devm_request_irq(eth->dev, eth->irq_adma[i],
+				       mtk_handle_irq_rx, IRQF_SHARED,
+				       name, &eth->rx_napi[i]);
+		if (err)
+			goto err_free_dev;
+		irq_set_affinity_hint(eth->irq_adma[i], cpumask_of(i));
 	}
 
 	/* ==================== КОНЕЦ ИНТЕРРУПТОВ ==================== */
@@ -2559,17 +2543,10 @@ static int mtk_probe(struct platform_device *pdev)
 	/* TX NAPI (пока оставляем 1 на всех) */
 	netif_napi_add(eth->dummy_dev, &eth->tx_napi, mtk_napi_tx);
 
-	/* RX NAPI: Строго 4 штуки под наши 4 очереди/прерывания */
-	netif_napi_add(eth->dummy_dev, &eth->rx_napi[0].napi, mtk_napi_rx);
-
-	if (MTK_HAS_CAPS(eth->soc->caps, MTK_RSS)) {
-		for (i = 0; i < MTK_RX_RSS_NUM; i++)
-			netif_napi_add(eth->dummy_dev,
-				       &eth->rx_napi[MTK_RSS_RING(i)].napi,
-				       mtk_napi_rx);
-	}
-
-	/* Блок HW LRO УДАЛЕН, чтобы не выходить за пределы массива из 4 элементов */
+	/* RX NAPI: 4 instances, each polling 2 rings (ring i + ring i+4) */
+	for (i = 0; i < MTK_RX_NAPI_NUM; i++)
+		netif_napi_add(eth->dummy_dev, &eth->rx_napi[i].napi,
+			       mtk_napi_rx);
 
 	platform_set_drvdata(pdev, eth);
 	schedule_delayed_work(&eth->reset.monitor_work,
@@ -2615,23 +2592,13 @@ static void mtk_remove(struct platform_device *pdev)
 	mtk_hw_deinit(eth);
 
 	/* СНАЧАЛА очищаем привязку прерываний к ядрам */
-	irq_set_affinity_hint(eth->irq_adma[0], NULL);
-	if (MTK_HAS_CAPS(eth->soc->caps, MTK_RSS)) {
-		for (i = 0; i < MTK_RX_RSS_NUM; i++)
-			irq_set_affinity_hint(eth->irq_adma[MTK_RSS_RING(i)],
-					      NULL);
-	}
+	for (i = 0; i < MTK_RX_NAPI_NUM; i++)
+		irq_set_affinity_hint(eth->irq_adma[i], NULL);
 
 	/* ПОТОМ удаляем NAPI */
 	netif_napi_del(&eth->tx_napi);
-	netif_napi_del(&eth->rx_napi[0].napi);
-
-	if (MTK_HAS_CAPS(eth->soc->caps, MTK_RSS)) {
-		for (i = 0; i < MTK_RX_RSS_NUM; i++)
-			netif_napi_del(&eth->rx_napi[MTK_RSS_RING(i)].napi);
-	}
-
-	/* Блок HW LRO УДАЛЕН, чтобы не выходить за пределы массива из 4 элементов */
+	for (i = 0; i < MTK_RX_NAPI_NUM; i++)
+		netif_napi_del(&eth->rx_napi[i].napi);
 
 	mtk_cleanup(eth);
 	free_netdev(eth->dummy_dev);
@@ -2641,7 +2608,7 @@ static void mtk_remove(struct platform_device *pdev)
 static const struct mtk_soc_data mt7988_data = {
 	.reg_map = &mt7988_reg_map,
 	.ana_rgc3 = 0x128,
-	.caps = MT7988_CAPS | MTK_HWLRO,
+	.caps = MT7988_CAPS,
 	.hw_features = MTK_HW_FEATURES,
 	.required_clks = MT7988_CLKS_BITMAP,
 	.required_pctl = false,

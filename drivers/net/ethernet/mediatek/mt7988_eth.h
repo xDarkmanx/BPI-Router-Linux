@@ -988,6 +988,7 @@ struct mtk_napi {
 	struct napi_struct napi;
 	struct mtk_eth *eth;
 	struct mtk_rx_ring *rx_ring;
+	struct mtk_rx_ring *rx_ring2;
 	u32 irq_grp_no;
 };
 

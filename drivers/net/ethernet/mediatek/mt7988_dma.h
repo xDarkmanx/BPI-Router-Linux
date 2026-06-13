@@ -70,7 +70,8 @@ int mtk_max_buf_size(int frag_size);
 /* ==========================================
  * NAPI
  * ========================================== */
-int mtk_poll_rx(struct napi_struct *napi, int budget, struct mtk_eth *eth);
+int mtk_poll_rx(struct napi_struct *napi, int budget, struct mtk_eth *eth,
+		struct mtk_rx_ring *ring);
 int mtk_poll_tx(struct mtk_eth *eth, int budget);
 
 /* ==========================================

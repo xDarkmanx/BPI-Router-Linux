@@ -667,13 +667,18 @@ static int mtk_rss_init(struct mtk_eth *eth)
 	val &= ~(MTK_RSS_CFG_REQ);
 	mtk_w32(eth, val, reg_map->adma.rss_glo_cfg);
 
-	/* Set perRSS GRP INT */
-	mtk_m32(eth, MTK_RX_DONE_INT(MTK_RSS_RING(0)),
-		MTK_RX_DONE_INT(MTK_RSS_RING(0)), reg_map->adma.int_grp);
-	mtk_m32(eth, MTK_RX_DONE_INT(MTK_RSS_RING(1)),
-		MTK_RX_DONE_INT(MTK_RSS_RING(1)), reg_map->adma.int_grp2);
-	mtk_m32(eth, MTK_RX_DONE_INT(MTK_RSS_RING(2)),
-		MTK_RX_DONE_INT(MTK_RSS_RING(2)), reg_map->adma.int_grp3);
+	/* GRP routing: 2 rings per group
+	 * GRP0 (default): rings 0, 4
+	 * GRP1: rings 1, 5
+	 * GRP2: rings 2, 6
+	 * GRP3: rings 3, 7
+	 */
+	mtk_w32(eth, MTK_RX_DONE_INT(1) | MTK_RX_DONE_INT(5),
+		reg_map->adma.int_grp);
+	mtk_w32(eth, MTK_RX_DONE_INT(2) | MTK_RX_DONE_INT(6),
+		reg_map->adma.int_grp2);
+	mtk_w32(eth, MTK_RX_DONE_INT(3) | MTK_RX_DONE_INT(7),
+		reg_map->adma.int_grp3);
 
 	/* Set GRP INT */
 	mtk_w32(eth, 0x210FFFF2, MTK_FE_INT_GRP);
@@ -726,30 +731,17 @@ int mtk_dma_init(struct mtk_eth *eth)
 	if (err)
 		return err;
 
-	err = mtk_rx_alloc(eth, 0, MTK_RX_FLAGS_NORMAL);
-	if (err)
-		return err;
-
-	if (eth->hwlro) {
-		for (i = 0; i < MTK_HW_LRO_RING_NUM; i++) {
-			err = mtk_rx_alloc(eth, MTK_HW_LRO_RING(i),
-					   MTK_RX_FLAGS_HWLRO);
-			if (err)
-				return err;
-		}
-		err = mtk_hwlro_rx_init(eth);
-		if (err)
-			return err;
-	}
-
 	if (MTK_HAS_CAPS(eth->soc->caps, MTK_RSS)) {
-		for (i = 0; i < MTK_RX_RSS_NUM; i++) {
-			err = mtk_rx_alloc(eth, MTK_RSS_RING(i),
-					   MTK_RX_FLAGS_NORMAL);
+		for (i = 0; i < MTK_RX_NAPI_NUM * 2; i++) {
+			err = mtk_rx_alloc(eth, i, MTK_RX_FLAGS_NORMAL);
 			if (err)
 				return err;
 		}
 		err = mtk_rss_init(eth);
+		if (err)
+			return err;
+	} else {
+		err = mtk_rx_alloc(eth, 0, MTK_RX_FLAGS_NORMAL);
 		if (err)
 			return err;
 	}
@@ -784,19 +776,15 @@ void mtk_dma_free(struct mtk_eth *eth)
 		eth->phy_scratch_ring = 0;
 	}
 	mtk_tx_clean(eth);
-	mtk_rx_clean(eth, &eth->rx_ring[0], MTK_HAS_CAPS(soc->caps, MTK_SRAM));
 	mtk_rx_clean(eth, &eth->rx_ring_qdma, false);
-
-	if (eth->hwlro) {
-		mtk_hwlro_rx_uninit(eth);
-		for (i = 0; i < MTK_HW_LRO_RING_NUM; i++)
-			mtk_rx_clean(eth, &eth->rx_ring[MTK_HW_LRO_RING(i)], 0);
-	}
 
 	if (MTK_HAS_CAPS(eth->soc->caps, MTK_RSS)) {
 		mtk_rss_uninit(eth);
-		for (i = 0; i < MTK_RX_RSS_NUM; i++)
-			mtk_rx_clean(eth, &eth->rx_ring[MTK_RSS_RING(i)], 1);
+		for (i = 0; i < MTK_RX_NAPI_NUM * 2; i++)
+			mtk_rx_clean(eth, &eth->rx_ring[i], 1);
+	} else {
+		mtk_rx_clean(eth, &eth->rx_ring[0],
+			     MTK_HAS_CAPS(soc->caps, MTK_SRAM));
 	}
 
 	for (i = 0; i < DIV_ROUND_UP(soc->tx.fq_dma_size, MTK_FQ_DMA_LENGTH);
@@ -1127,7 +1115,8 @@ struct page_pool *mtk_create_page_pool(struct mtk_eth *eth,
 		return pp;
 
 	err = __xdp_rxq_info_reg(xdp_q, eth->dummy_dev, id,
-				 eth->rx_napi[id].napi.napi_id, PAGE_SIZE);
+				 eth->rx_napi[id % MTK_RX_NAPI_NUM].napi.napi_id,
+				 PAGE_SIZE);
 	if (err < 0)
 		goto err_free_pp;
 
@@ -1383,11 +1372,10 @@ out:
 	return act;
 }
 
-int mtk_poll_rx(struct napi_struct *napi, int budget, struct mtk_eth *eth)
+int mtk_poll_rx(struct napi_struct *napi, int budget, struct mtk_eth *eth,
+		struct mtk_rx_ring *ring)
 {
 	struct dim_sample dim_sample = {};
-	struct mtk_napi *rx_napi = container_of(napi, struct mtk_napi, napi);
-	struct mtk_rx_ring *ring = rx_napi->rx_ring;
 	bool xdp_flush = false;
 	int idx;
 	struct sk_buff *skb;
@@ -1673,64 +1661,64 @@ int mtk_napi_rx(struct napi_struct *napi, int budget)
 {
 	struct mtk_napi *rx_napi = container_of(napi, struct mtk_napi, napi);
 	struct mtk_eth *eth = rx_napi->eth;
-	struct mtk_rx_ring *ring = rx_napi->rx_ring;
 	const struct mtk_reg_map *reg_map = eth->soc->reg_map;
+	struct mtk_rx_ring *rings[2];
+	u32 int_mask;
 	int rx_done_total = 0;
+	int i;
+
+	rings[0] = rx_napi->rx_ring;
+	rings[1] = rx_napi->rx_ring2;
+	int_mask = MTK_RX_DONE_INT(rings[0]->ring_no);
+	if (rings[1])
+		int_mask |= MTK_RX_DONE_INT(rings[1]->ring_no);
 
 	mtk_handle_status_irq(eth);
 
-	do {
+	for (i = 0; i < 2; i++) {
 		int rx_done;
 
-		mtk_w32(eth, MTK_RX_DONE_INT(ring->ring_no),
-			reg_map->adma.irq_status);
-		rx_done = mtk_poll_rx(napi, budget - rx_done_total, eth);
-		rx_done_total += rx_done;
+		if (!rings[i])
+			continue;
 
-		if (unlikely(netif_msg_intr(eth))) {
-			dev_info(eth->dev, "done rx %d, intr 0x%08x/0x%x\n",
-				 rx_done,
-				 mtk_r32(eth, reg_map->adma.irq_status),
-				 mtk_r32(eth, reg_map->adma.irq_mask));
-		}
+		do {
+			mtk_w32(eth, MTK_RX_DONE_INT(rings[i]->ring_no),
+				reg_map->adma.irq_status);
+			rx_done = mtk_poll_rx(napi, budget - rx_done_total,
+					      eth, rings[i]);
+			rx_done_total += rx_done;
 
-		if (rx_done_total == budget)
-			return budget;
+			if (unlikely(netif_msg_intr(eth))) {
+				dev_info(eth->dev,
+					 "ring%d done rx %d, intr 0x%08x/0x%x\n",
+					 rings[i]->ring_no, rx_done,
+					 mtk_r32(eth, reg_map->adma.irq_status),
+					 mtk_r32(eth, reg_map->adma.irq_mask));
+			}
 
-	} while (mtk_r32(eth, reg_map->adma.irq_status) &
-		 MTK_RX_DONE_INT(ring->ring_no));
+			if (rx_done_total == budget)
+				return budget;
+
+		} while (mtk_r32(eth, reg_map->adma.irq_status) &
+			 MTK_RX_DONE_INT(rings[i]->ring_no));
+	}
 
 	if (napi_complete_done(napi, rx_done_total))
-		mtk_rx_irq_enable(eth, MTK_RX_DONE_INT(ring->ring_no));
+		mtk_rx_irq_enable(eth, int_mask);
 
 	return rx_done_total;
 }
 
 int mtk_napi_init(struct mtk_eth *eth)
 {
-	struct mtk_napi *rx_napi;
 	int i;
 
-	/* Настраиваем Base Ring 0 -> NAPI 0 */
-	rx_napi = &eth->rx_napi[0];
-	rx_napi->eth = eth;
-	rx_napi->rx_ring = &eth->rx_ring[0];
-
-	/* Настраиваем RSS Rings 1, 2, 3 -> NAPI 1, 2, 3 */
-	if (MTK_HAS_CAPS(eth->soc->caps, MTK_RSS)) {
-		for (i = 0; i < MTK_RX_RSS_NUM; i++) {
-			/* MTK_RSS_RING(i) вернет 1, 2, 3 */
-			int ring_no = MTK_RSS_RING(i);
-
-			rx_napi = &eth->rx_napi[ring_no];
-			rx_napi->eth = eth;
-			rx_napi->rx_ring = &eth->rx_ring[ring_no];
-		}
+	for (i = 0; i < MTK_RX_NAPI_NUM; i++) {
+		eth->rx_napi[i].eth = eth;
+		eth->rx_napi[i].irq_grp_no = i;
+		eth->rx_napi[i].rx_ring = &eth->rx_ring[i];
+		eth->rx_napi[i].rx_ring2 = &eth->rx_ring[i + MTK_RX_NAPI_NUM];
 	}
-
-	/* ВНИМАНИЕ: Кольца HW LRO (4,5,6,7) мы пока не трогаем!
-	 * В нашей схеме 4 IRQ они не используются и NAPI для них не создается.
-	 */
 
 	return 0;
 }

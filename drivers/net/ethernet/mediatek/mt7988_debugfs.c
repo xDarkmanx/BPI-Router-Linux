@@ -621,7 +621,7 @@ static int mt7988_adma_status_show(struct seq_file *m, void *private)
 			continue;
 		seq_printf(m, "\nRing%d:\n", i);
 		seq_printf(m, " BASE_PTR : %08x\n", mtk_r32(eth, base));
-		seq_printf(m, " MAX_CNT  : %08x\n", mtk_r32(eth, base + 0x04));
+		seq_printf(m, " MAX_CNT  : %d\n", eth->rx_ring[i].dma_size);
 		seq_printf(m, " CRX_IDX  : %08x\n", mtk_r32(eth, base + 0x08));
 		seq_printf(m, " DRX_IDX  : %08x\n", mtk_r32(eth, base + 0x0c));
 	}
